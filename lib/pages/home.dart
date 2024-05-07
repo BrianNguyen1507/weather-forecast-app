@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-
+import 'package:provider/provider.dart';
+import 'package:weather_app/provider/locationProvider.dart';
 import 'package:weather_app/services/getWeather.dart';
 import 'package:weather_app/widget/getDateTime.dart';
 import 'package:weather_app/widget/imageUrl.dart';
@@ -15,15 +16,51 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late Future<Map<String, dynamic>> _weatherData;
   GetDateTime dateTimeConverter = GetDateTime();
-
-  String input = 'New york';
+  String? selectedOption;
+  List<String> dropdownItems = [];
+  String input = '';
+  final List<String> _locations = [];
+  List<String> get locations => _locations;
   final TextEditingController locationController = TextEditingController();
+  @override
   @override
   void initState() {
     super.initState();
-    locationController.text = input;
+    _loadSavedData();
+    setState(() {
+      input = dropdownItems.isNotEmpty ? dropdownItems[0] : 'New York';
+      locationController.text = input;
+    });
     final getData = GetData(location: input, value: "c");
     _weatherData = getData.fetchingData();
+  }
+
+  void _loadSavedData() {
+    final locationProvider =
+        Provider.of<LocationProvider>(context, listen: false);
+    List<String> savedLocations = locationProvider.locations;
+
+    String lastSelectedOption =
+        savedLocations.isNotEmpty ? savedLocations.last : 'New York';
+
+    setState(() {
+      selectedOption = lastSelectedOption;
+      locationController.text = selectedOption!;
+    });
+
+    final getData = GetData(location: lastSelectedOption, value: "c");
+    _weatherData = getData.fetchingData();
+  }
+
+  void _saveData(String data) {
+    final locationProvider =
+        Provider.of<LocationProvider>(context, listen: false);
+    locationProvider.addLocation(data);
+  }
+
+  void saveInputData(String newData) {
+    _saveData(newData);
+    _loadSavedData();
   }
 
   @override
@@ -43,25 +80,51 @@ class _HomePageState extends State<HomePage> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(5.0),
-              child: TextField(
-                controller: locationController,
-                decoration: InputDecoration(
-                  hintText: 'What is the city you live in?',
-                  border: const OutlineInputBorder(),
-                  prefixIcon: IconButton(
-                    icon: const Icon(Icons.add),
-                    onPressed: () {
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: locationController,
+                      decoration: InputDecoration(
+                        hintText: 'What is the city you live in?',
+                        border: const OutlineInputBorder(),
+                        prefixIcon: IconButton(
+                          icon: const Icon(Icons.add),
+                          onPressed: () {
+                            setState(() {
+                              input = locationController.text;
+                              final getData =
+                                  GetData(location: input, value: "c");
+                              _weatherData = getData.fetchingData();
+                              _saveData(input);
+                              _loadSavedData();
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  DropdownButton<String>(
+                    value: selectedOption,
+                    onChanged: (String? newValue) {
                       setState(() {
-                        input = locationController.text;
-                      });
-
-                      final getData = GetData(location: input, value: "c");
-                      setState(() {
+                        selectedOption = newValue;
+                        locationController.text = newValue!;
+                        final getData = GetData(location: newValue, value: "c");
                         _weatherData = getData.fetchingData();
                       });
                     },
+                    items: Provider.of<LocationProvider>(context)
+                        .locations
+                        .map<DropdownMenuItem<String>>((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(value),
+                      );
+                    }).toList(),
                   ),
-                ),
+                ],
               ),
             ),
           ),
@@ -78,7 +141,16 @@ class _HomePageState extends State<HomePage> {
                           child: CircularProgressIndicator(),
                         );
                       } else if (snapshot.hasError) {
-                        return Text('Error: ${snapshot.error}');
+                        Future.delayed(const Duration(seconds: 5), () {
+                          if (snapshot.hasData) {
+                            return Center(
+                                child: Text(snapshot.data.toString()));
+                          } else {
+                            return Center(
+                                child: Text('Error: ${snapshot.error}'));
+                          }
+                        });
+                        return const SizedBox();
                       } else {
                         final weatherData = snapshot.data!;
                         String weatherStatus =

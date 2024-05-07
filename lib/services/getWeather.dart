@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:weather_app/Constant/privatekey.dart';
+import 'package:weather_app/constant/privatekey.dart';
 
 class GetData {
   final String location;

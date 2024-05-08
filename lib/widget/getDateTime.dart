@@ -1,8 +1,9 @@
-import 'package:intl/intl.dart';
-
 class GetDateTime {
-  String convertFromEpochToMonthName(int epoch) {
-    DateTime dateTime = DateTime.fromMillisecondsSinceEpoch(epoch * 1000);
+  String convertToMonthName(String inputDate) {
+    List<String> parts = inputDate.split('-');
+    int year = int.parse(parts[0]);
+    int month = int.parse(parts[1]);
+    int day = int.parse(parts[2]);
 
     List<String> monthNames = [
       'January',
@@ -18,24 +19,21 @@ class GetDateTime {
       'November',
       'December'
     ];
+    String monthName = monthNames[month - 1];
 
-    String monthName = monthNames[dateTime.month - 1];
-
-    String formattedDate = '${dateTime.day} $monthName ${dateTime.year}';
-
-    return formattedDate;
+    return ' $day $monthName $year';
   }
 
-  String convertEpochToDateString(int epoch) {
-    DateTime dateTime = DateTime.fromMillisecondsSinceEpoch(epoch * 1000);
-    return DateFormat('yyyy-MM-dd').format(dateTime);
+  String formatDate(String dateTimeString) {
+    String formattedDateTime =
+        dateTimeString.substring(0, dateTimeString.indexOf("T"));
+    return formattedDateTime;
   }
 
-  String formatCurrentDate() {
+  bool isDateAfterNow(String dateString) {
+    DateTime date = DateTime.parse(dateString);
     DateTime now = DateTime.now();
 
-    String formattedDate = DateFormat('EEEE').format(now);
-
-    return formattedDate;
+    return date.isAfter(now);
   }
 }

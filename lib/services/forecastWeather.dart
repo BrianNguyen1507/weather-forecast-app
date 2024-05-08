@@ -1,28 +1,23 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:weather_app/constant/privatekey.dart';
 
-class GetData {
-  final String location;
-  final String value;
-  GetData({
-    required this.location,
-    required this.value,
+class Forecastweather {
+  final String lat;
+  final String lon;
+  Forecastweather({
+    required this.lat,
+    required this.lon,
   });
-  Future<Map<String, dynamic>> fetchingData() async {
+  Future<Map<String, dynamic>> fetchingWeather() async {
     try {
       final url = Uri.parse(
-          'https://yahoo-weather5.p.rapidapi.com/weather?location=$location&format=json&u=$value');
+          'https://api.open-meteo.com/v1/meteofrance?latitude=$lat&longitude=$lon&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min');
       final response = await http.get(
         url,
-        headers: {
-          "x-rapidapi-key": Apiheader.key,
-          "x-rapidapi-host": Apiheader.host,
-        },
       );
-
       if (response.statusCode == 200) {
         Map<String, dynamic> responseData = json.decode(response.body);
+        print('Data: $responseData');
         return responseData;
       } else {
         throw Exception('Failed to load data: ${response.statusCode}');

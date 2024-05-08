@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:weather_app/model/weather.dart';
 import 'package:weather_app/provider/locationProvider.dart';
-import 'package:weather_app/services/getWeather.dart';
+import 'package:weather_app/services/forecastWeather.dart';
+import 'package:weather_app/services/geoapifyApi.dart';
 import 'package:weather_app/widget/getDateTime.dart';
-import 'package:weather_app/widget/imageUrl.dart';
-import 'package:weather_app/widget/weather.dart';
+import 'package:weather_app/widget/weatherUrl.dart';
+import 'package:weather_app/widget/weatherShow.dart';
+import 'package:weather_app/widget/weatherCode.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -14,42 +17,50 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  late Future<Map<String, dynamic>> _weatherData;
-  GetDateTime dateTimeConverter = GetDateTime();
+  late Future<Map<String, dynamic>>? _weatherData;
+  late Future<Map<String, dynamic>>? _localtionData;
+
+  GetDateTime getDate = GetDateTime();
   String? selectedOption;
   List<String> dropdownItems = [];
   String input = '';
   final List<String> _locations = [];
   List<String> get locations => _locations;
   final TextEditingController locationController = TextEditingController();
-  @override
+
   @override
   void initState() {
     super.initState();
+    _weatherData = null;
+    _localtionData = null;
     _loadSavedData();
-    setState(() {
-      input = dropdownItems.isNotEmpty ? dropdownItems[0] : 'New York';
-      locationController.text = input;
-    });
-    final getData = GetData(location: input, value: "c");
-    _weatherData = getData.fetchingData();
   }
 
-  void _loadSavedData() {
+  void _loadSavedData() async {
     final locationProvider =
         Provider.of<LocationProvider>(context, listen: false);
     List<String> savedLocations = locationProvider.locations;
 
     String lastSelectedOption =
-        savedLocations.isNotEmpty ? savedLocations.last : 'New York';
+        savedLocations.isNotEmpty ? savedLocations.last : 'Ho Chi Minh';
 
     setState(() {
       selectedOption = lastSelectedOption;
       locationController.text = selectedOption!;
     });
 
-    final getData = GetData(location: lastSelectedOption, value: "c");
-    _weatherData = getData.fetchingData();
+    final getGeoapify = Geoapify(location: lastSelectedOption);
+    var locationData = await getGeoapify.fetchingLocation();
+    String lat = locationData['features'][0]['properties']['lat'].toString();
+    String lon = locationData['features'][0]['properties']['lon'].toString();
+
+    final forecastWeather = Forecastweather(lat: lat, lon: lon);
+    var weatherData = await forecastWeather.fetchingWeather();
+
+    setState(() {
+      _weatherData = Future.value(weatherData);
+      _localtionData = Future.value(locationData);
+    });
   }
 
   void _saveData(String data) {
@@ -70,8 +81,8 @@ class _HomePageState extends State<HomePage> {
         slivers: [
           const SliverAppBar(
             title: Text(
-              'WEATHER APP',
-              style: TextStyle(fontWeight: FontWeight.bold),
+              'TODAY WEATHER',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
             ),
             centerTitle: true,
             floating: true,
@@ -93,9 +104,6 @@ class _HomePageState extends State<HomePage> {
                           onPressed: () {
                             setState(() {
                               input = locationController.text;
-                              final getData =
-                                  GetData(location: input, value: "c");
-                              _weatherData = getData.fetchingData();
                               _saveData(input);
                               _loadSavedData();
                             });
@@ -111,8 +119,7 @@ class _HomePageState extends State<HomePage> {
                       setState(() {
                         selectedOption = newValue;
                         locationController.text = newValue!;
-                        final getData = GetData(location: newValue, value: "c");
-                        _weatherData = getData.fetchingData();
+                        _loadSavedData();
                       });
                     },
                     items: Provider.of<LocationProvider>(context)
@@ -134,98 +141,105 @@ class _HomePageState extends State<HomePage> {
               delegate: SliverChildListDelegate(
                 [
                   FutureBuilder<Map<String, dynamic>>(
-                    future: _weatherData,
+                    future: _localtionData,
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      } else if (snapshot.hasError) {
+                        return Text('Error: ${snapshot.error}');
+                      } else if (!snapshot.hasData) {
+                        return const SizedBox();
+                      } else {
+                        final locationData = snapshot.data!;
+                        String text = locationData['features'][0]['properties']
+                                ['formatted']
+                            .toString();
+                        const int maxLength = 35;
+                        String shortenedText = text.length <= maxLength
+                            ? text
+                            : '${text.substring(0, maxLength)}...';
+                        return Column(
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: Image.asset('assets/pin.png'),
+                                    ),
+                                    const SizedBox(
+                                      width: 5.0,
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.all(5.0),
+                                      child: Text(
+                                        shortenedText,
+                                        style: const TextStyle(
+                                          fontSize: 18.0,
+                                          color: Colors.black,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        softWrap: true,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        );
+                      }
+                    },
+                  ),
+                  FutureBuilder<Map<String, dynamic>>(
+                    future: _weatherData,
+                    builder: (context, weatherSnapshot) {
+                      if (weatherSnapshot.connectionState ==
+                          ConnectionState.waiting) {
                         return const Center(
                           child: CircularProgressIndicator(),
                         );
-                      } else if (snapshot.hasError) {
-                        Future.delayed(const Duration(seconds: 5), () {
-                          if (snapshot.hasData) {
-                            return Center(
-                                child: Text(snapshot.data.toString()));
-                          } else {
-                            return Center(
-                                child: Text('Error: ${snapshot.error}'));
-                          }
-                        });
-                        return const SizedBox();
+                      } else if (weatherSnapshot.hasError) {
+                        return Center(
+                          child: Text('Error: ${weatherSnapshot.error}'),
+                        );
+                      } else if (!weatherSnapshot.hasData) {
+                        return const Center(
+                          child: CircularProgressIndicator(),
+                        );
                       } else {
-                        final weatherData = snapshot.data!;
-                        String weatherStatus =
-                            weatherData['current_observation']['condition']
-                                    ['text']
-                                .toString();
-                        ImageWeather imageWeather =
-                            ImageWeather(status: weatherStatus);
+                        Map<String, dynamic> weatherData =
+                            weatherSnapshot.data!;
+                        WeatherData data = WeatherData.fromJson(weatherData);
+                        int weatherCode = data.current.weatherCode;
+                        WeatherImage imageWeather =
+                            WeatherImage(weatherCode: weatherCode);
                         String imageUrl = imageWeather.getImageUrl();
+
+                        WeatherDescription description =
+                            WeatherDescription(weatherCode: weatherCode);
+                        String desWeather = description.getWeatherDescription();
+
                         return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(5.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      SizedBox(
-                                        height: 20,
-                                        width: 20,
-                                        child: Image.asset('assets/pin.png'),
-                                      ),
-                                      const SizedBox(
-                                        width: 5.0,
-                                      ),
-                                      Text(
-                                        weatherData['location']['city'],
-                                        style: const TextStyle(
-                                          fontSize: 25.0,
-                                          color: Colors.black,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      Text(
-                                        ' ,${weatherData['location']['country']}',
-                                        style: const TextStyle(
-                                          fontSize: 25.0,
-                                          color: Colors.black,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  Row(
-                                    children: [
-                                      Text(
-                                        dateTimeConverter.formatCurrentDate(),
-                                        style: TextStyle(
-                                          fontSize: 20.0,
-                                          color: Colors.grey.shade700,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      Text(
-                                        ', ${dateTimeConverter.convertFromEpochToMonthName(
-                                              weatherData['current_observation']
-                                                  ['pubDate'],
-                                            ).toString()}',
-                                        style: TextStyle(
-                                          fontSize: 20.0,
-                                          color: Colors.grey.shade700,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                            Text(
+                              getDate.convertToMonthName(
+                                getDate
+                                    .formatDate(data.current.time.toString()),
+                              ),
+                              style: TextStyle(
+                                fontSize: 20.0,
+                                color: Colors.grey.shade700,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                             SizedBox(
-                              width: double.infinity,
                               child: Center(
                                 child: Container(
-                                  width: double.infinity,
                                   decoration: BoxDecoration(
                                     color:
                                         const Color.fromARGB(255, 96, 202, 237),
@@ -254,10 +268,9 @@ class _HomePageState extends State<HomePage> {
                                               child: Image.asset(imageUrl),
                                             ),
                                             Text(
-                                              weatherData['current_observation']
-                                                  ['condition']['text'],
+                                              desWeather,
                                               style: const TextStyle(
-                                                fontSize: 25.0,
+                                                fontSize: 20.0,
                                                 color: Colors.white,
                                                 fontWeight: FontWeight.bold,
                                               ),
@@ -265,11 +278,12 @@ class _HomePageState extends State<HomePage> {
                                           ],
                                         ),
                                         Text(
-                                          '${weatherData['current_observation']['condition']['code']}°',
+                                          '${data.current.temperature2m.toString()}${data.currentUnits.apparentTemperature.toString()}',
                                           style: const TextStyle(
-                                              fontSize: 60.0,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 40.0,
                                               color: Colors.white),
-                                        )
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -306,7 +320,42 @@ class _HomePageState extends State<HomePage> {
                                           ),
                                         ),
                                         Text(
-                                          ' ${weatherData['current_observation']['wind']['speed'].toString()} km/h',
+                                          '${data.current.windSpeed10m.toString()} ${data.currentUnits.windSpeed10m}',
+                                          style: const TextStyle(
+                                              color: Colors.black,
+                                              fontSize: 15.0,
+                                              fontWeight: FontWeight.bold),
+                                        ),
+                                      ],
+                                    ),
+                                    Column(
+                                      children: [
+                                        Container(
+                                          margin: const EdgeInsets.all(10.0),
+                                          padding: const EdgeInsets.all(10.0),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey.shade300,
+                                            borderRadius:
+                                                BorderRadius.circular(10.0),
+                                          ),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              SizedBox(
+                                                width: 30,
+                                                child: Image.asset(
+                                                    data.current.isDay == 1
+                                                        ? 'assets/sun.png'
+                                                        : 'assets/moon.png'),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Text(
+                                          data.current.isDay == 1
+                                              ? 'Day'
+                                              : 'Night',
                                           style: const TextStyle(
                                               color: Colors.black,
                                               fontSize: 15.0,
@@ -337,100 +386,7 @@ class _HomePageState extends State<HomePage> {
                                           ),
                                         ),
                                         Text(
-                                          ' ${weatherData['current_observation']['atmosphere']['humidity'].toString()}',
-                                          style: const TextStyle(
-                                              color: Colors.black,
-                                              fontSize: 15.0,
-                                              fontWeight: FontWeight.bold),
-                                        ),
-                                      ],
-                                    ),
-                                    Column(
-                                      children: [
-                                        Container(
-                                          margin: const EdgeInsets.all(10.0),
-                                          padding: const EdgeInsets.all(10.0),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey.shade300,
-                                            borderRadius:
-                                                BorderRadius.circular(10.0),
-                                          ),
-                                          child: Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              SizedBox(
-                                                width: 30,
-                                                child: Image.asset(
-                                                    'assets/max-temp.png'),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        Text(
-                                          ' ${weatherData['current_observation']['condition']['temperature'].toString()}C',
-                                          style: const TextStyle(
-                                              color: Colors.black,
-                                              fontSize: 15.0,
-                                              fontWeight: FontWeight.bold),
-                                        ),
-                                      ],
-                                    ),
-                                    Column(
-                                      children: [
-                                        Container(
-                                          margin: const EdgeInsets.all(10.0),
-                                          padding: const EdgeInsets.all(10.0),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey.shade300,
-                                            borderRadius:
-                                                BorderRadius.circular(10.0),
-                                          ),
-                                          child: Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              SizedBox(
-                                                width: 30,
-                                                child: Image.asset(
-                                                    'assets/sunrise.png'),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        Text(
-                                          ' ${weatherData['current_observation']['astronomy']['sunrise'].toString()}',
-                                          style: const TextStyle(
-                                              color: Colors.black,
-                                              fontSize: 15.0,
-                                              fontWeight: FontWeight.bold),
-                                        ),
-                                      ],
-                                    ),
-                                    Column(
-                                      children: [
-                                        Container(
-                                          margin: const EdgeInsets.all(10.0),
-                                          padding: const EdgeInsets.all(10.0),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey.shade300,
-                                            borderRadius:
-                                                BorderRadius.circular(10.0),
-                                          ),
-                                          child: Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              SizedBox(
-                                                width: 30,
-                                                child: Image.asset(
-                                                    'assets/sunset.png'),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        Text(
-                                          ' ${weatherData['current_observation']['astronomy']['sunset'].toString()}',
+                                          '${data.current.relativeHumidity2m.toString()}${data.currentUnits.relativeHumidity2m.toString()}',
                                           style: const TextStyle(
                                               color: Colors.black,
                                               fontSize: 15.0,
@@ -447,7 +403,7 @@ class _HomePageState extends State<HomePage> {
                               children: [
                                 SizedBox(),
                                 Text(
-                                  'Next 10 Days',
+                                  'Next 3 Days',
                                   style: TextStyle(
                                       color: Color.fromARGB(255, 96, 202, 237),
                                       fontSize: 20.0,
@@ -456,105 +412,27 @@ class _HomePageState extends State<HomePage> {
                               ],
                             ),
                             SizedBox(
-                              height: 250,
+                              height: 230.0,
                               child: ListView.builder(
                                 physics: const BouncingScrollPhysics(),
                                 scrollDirection: Axis.horizontal,
-                                itemCount: weatherData['forecasts'].length,
+                                itemCount: data.daily.time.length,
                                 itemBuilder: (context, index) {
-                                  final forecast =
-                                      weatherData['forecasts'][index];
-                                  String dateparse = dateTimeConverter
-                                      .convertEpochToDateString(
-                                          forecast['date']);
-                                  bool isDateAfterNow(String dateString) {
-                                    DateTime date = DateTime.parse(dateString);
-                                    DateTime now = DateTime.now();
+                                  int dailyCode = data.daily.weatherCode[index];
 
-                                    return date.isAfter(now);
-                                  }
-
-                                  String status = forecast['text'].toString();
-
-                                  ImageWeather imageWeather =
-                                      ImageWeather(status: status);
-                                  String imagebottom =
-                                      imageWeather.getImageUrl();
-                                  return Container(
-                                    margin: const EdgeInsets.all(5.0),
-                                    decoration: BoxDecoration(
-                                      color: isDateAfterNow(dateparse)
-                                          ? Colors.blue
-                                          : const Color.fromARGB(
-                                              255, 183, 111, 250),
-                                      borderRadius: BorderRadius.circular(10.0),
-                                    ),
-                                    child: Center(
-                                      child: !isDateAfterNow(dateparse)
-                                          ? Column(
-                                              children: [
-                                                Container(
-                                                  padding:
-                                                      const EdgeInsets.all(3.0),
-                                                  decoration:
-                                                      const BoxDecoration(
-                                                    color: Color.fromARGB(
-                                                        255, 0, 0, 0),
-                                                    borderRadius:
-                                                        BorderRadius.only(
-                                                      bottomLeft:
-                                                          Radius.circular(10.0),
-                                                      bottomRight:
-                                                          Radius.circular(10.0),
-                                                    ),
-                                                  ),
-                                                  child: const Text(
-                                                    'Today',
-                                                    style: TextStyle(
-                                                        color: Color.fromARGB(
-                                                            255, 255, 255, 255),
-                                                        fontSize: 20.0,
-                                                        fontWeight:
-                                                            FontWeight.bold),
-                                                  ),
-                                                ),
-                                                WeatherItem(
-                                                  image: imagebottom,
-                                                  day: forecast['day'],
-                                                  date: dateTimeConverter
-                                                      .convertFromEpochToMonthName(
-                                                          forecast['date']),
-                                                  highValue: forecast['high'],
-                                                  lowValue: forecast['low'],
-                                                ),
-                                              ],
-                                            )
-                                          : Column(
-                                              children: [
-                                                Container(
-                                                  padding:
-                                                      const EdgeInsets.all(3.0),
-                                                  child: const Text(
-                                                    '',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.transparent,
-                                                        fontSize: 20.0,
-                                                        fontWeight:
-                                                            FontWeight.bold),
-                                                  ),
-                                                ),
-                                                WeatherItem(
-                                                  image: imagebottom,
-                                                  day: forecast['day'],
-                                                  date: dateTimeConverter
-                                                      .convertFromEpochToMonthName(
-                                                          forecast['date']),
-                                                  highValue: forecast['high'],
-                                                  lowValue: forecast['low'],
-                                                ),
-                                              ],
-                                            ),
+                                  WeatherImage imageDaily =
+                                      WeatherImage(weatherCode: dailyCode);
+                                  String imageUrlDaily =
+                                      imageDaily.getImageUrl();
+                                  return Center(
+                                    child: WeatherItem(
+                                      code: data.daily.weatherCode[index],
+                                      image: imageUrlDaily,
+                                      time: data.daily.time[index],
+                                      highValue:
+                                          data.daily.temperature2mMax[index],
+                                      lowValue:
+                                          data.daily.temperature2mMin[index],
                                     ),
                                   );
                                 },
@@ -568,7 +446,7 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
-          ),
+          )
         ],
       ),
     );

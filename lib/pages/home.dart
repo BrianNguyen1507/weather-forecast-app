@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:weather_app/model/weather.dart';
-import 'package:weather_app/provider/locationProvider.dart';
+import 'package:weather_app/module/LocalCurrentPermissions.dart';
 import 'package:weather_app/services/forecastWeather.dart';
 import 'package:weather_app/services/geoapifyApi.dart';
 import 'package:weather_app/widget/getDateTime.dart';
@@ -19,14 +19,12 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late Future<Map<String, dynamic>>? _weatherData;
   late Future<Map<String, dynamic>>? _localtionData;
-
+  PermisstionsLocation permisstionsLocation = PermisstionsLocation();
   GetDateTime getDate = GetDateTime();
-  String? selectedOption;
-  List<String> dropdownItems = [];
-  String input = '';
-  final List<String> _locations = [];
-  List<String> get locations => _locations;
+  bool currentFlag = false;
   final TextEditingController locationController = TextEditingController();
+  String? _latitude;
+  String? _longitude;
 
   @override
   void initState() {
@@ -36,24 +34,21 @@ class _HomePageState extends State<HomePage> {
     _loadSavedData();
   }
 
-  void _loadSavedData() async {
-    final locationProvider =
-        Provider.of<LocationProvider>(context, listen: false);
-    List<String> savedLocations = locationProvider.locations;
+  Future<void> _loadSavedData() async {
+    String location = locationController.text.toString();
 
-    String lastSelectedOption =
-        savedLocations.isNotEmpty ? savedLocations.last : 'Ho Chi Minh';
+    if (location.isEmpty) {
+      _getCurrentLocation();
+    } else {
+      await _fetchAndSetLocationAndWeather(location);
+    }
+  }
 
-    setState(() {
-      selectedOption = lastSelectedOption;
-      locationController.text = selectedOption!;
-    });
-
-    final getGeoapify = Geoapify(location: lastSelectedOption);
+  Future<void> _fetchAndSetLocationAndWeather(String location) async {
+    final getGeoapify = Geoapify(location: location);
     var locationData = await getGeoapify.fetchingLocation();
     String lat = locationData['features'][0]['properties']['lat'].toString();
     String lon = locationData['features'][0]['properties']['lon'].toString();
-
     final forecastWeather = Forecastweather(lat: lat, lon: lon);
     var weatherData = await forecastWeather.fetchingWeather();
 
@@ -63,15 +58,23 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _saveData(String data) {
-    final locationProvider =
-        Provider.of<LocationProvider>(context, listen: false);
-    locationProvider.addLocation(data);
-  }
-
-  void saveInputData(String newData) {
-    _saveData(newData);
-    _loadSavedData();
+  void _getCurrentLocation() async {
+    try {
+      Position position = await permisstionsLocation.determinePosition();
+      setState(() {
+        currentFlag = true;
+        locationController.clear();
+        locationController.text = 'Your Location';
+        _latitude = position.latitude.toString();
+        _longitude = position.longitude.toString();
+        final forecastWeather =
+            Forecastweather(lat: _latitude!, lon: _longitude!);
+        var weatherData = forecastWeather.fetchingWeather();
+        _weatherData = Future.value(weatherData);
+      });
+    } catch (e) {
+      print("Error: ${e.toString()}");
+    }
   }
 
   @override
@@ -99,12 +102,11 @@ class _HomePageState extends State<HomePage> {
                       decoration: InputDecoration(
                         hintText: 'What is the city you live in?',
                         border: const OutlineInputBorder(),
-                        prefixIcon: IconButton(
+                        suffixIcon: IconButton(
                           icon: const Icon(Icons.add),
                           onPressed: () {
                             setState(() {
-                              input = locationController.text;
-                              _saveData(input);
+                              currentFlag = false;
                               _loadSavedData();
                             });
                           },
@@ -113,24 +115,21 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  DropdownButton<String>(
-                    value: selectedOption,
-                    onChanged: (String? newValue) {
-                      setState(() {
-                        selectedOption = newValue;
-                        locationController.text = newValue!;
-                        _loadSavedData();
-                      });
-                    },
-                    items: Provider.of<LocationProvider>(context)
-                        .locations
-                        .map<DropdownMenuItem<String>>((String value) {
-                      return DropdownMenuItem<String>(
-                        value: value,
-                        child: Text(value),
-                      );
-                    }).toList(),
-                  ),
+                  Container(
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.blue,
+                    ),
+                    child: IconButton(
+                      onPressed: () {
+                        _getCurrentLocation();
+                      },
+                      icon: const Icon(
+                        Icons.location_on_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                  )
                 ],
               ),
             ),
@@ -176,7 +175,9 @@ class _HomePageState extends State<HomePage> {
                                     Padding(
                                       padding: const EdgeInsets.all(5.0),
                                       child: Text(
-                                        shortenedText,
+                                        currentFlag
+                                            ? "Your Location"
+                                            : shortenedText,
                                         style: const TextStyle(
                                           fontSize: 18.0,
                                           color: Colors.black,
@@ -226,15 +227,18 @@ class _HomePageState extends State<HomePage> {
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              getDate.convertToMonthName(
-                                getDate
-                                    .formatDate(data.current.time.toString()),
-                              ),
-                              style: TextStyle(
-                                fontSize: 20.0,
-                                color: Colors.grey.shade700,
-                                fontWeight: FontWeight.bold,
+                            Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Text(
+                                getDate.convertToMonthName(
+                                  getDate
+                                      .formatDate(data.current.time.toString()),
+                                ),
+                                style: TextStyle(
+                                  fontSize: 20.0,
+                                  color: Colors.grey.shade700,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                             SizedBox(
